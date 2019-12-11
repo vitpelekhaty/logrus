@@ -8,7 +8,7 @@ Custom hooks for Sirupsen/logrus
 import "github.com/vitpelekhaty/logrus/hooks"
 ```
 
-### Example
+### Mongo hook example
 
 ```go
 import (
