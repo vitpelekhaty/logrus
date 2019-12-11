@@ -33,7 +33,7 @@ func main() {
     }
 
     defer func() {
-        ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*10)
+        ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*5)
         defer cancelFunc()
 
         client.Disconnect(ctx)
