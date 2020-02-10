@@ -13,37 +13,75 @@ import (
 // MongoHook logrus hook for writing logs into mongo collection
 type MongoHook struct {
 	collection *mongo.Collection
+	timeout *time.Duration
+}
+
+// MongoHookOption mongo hook option
+type MongoHookOption func(*MongoHook)
+
+func WithTimeout(timeout *time.Duration) MongoHookOption {
+	return func(hook *MongoHook) {
+		hook.timeout = timeout
+	}
 }
 
 // NewMongoHook returns new hook
-func NewMongoHook(collection *mongo.Collection) (*MongoHook, error) {
+func NewMongoHook(collection *mongo.Collection, opts ...MongoHookOption) (*MongoHook, error) {
 	if collection == nil {
 		return nil, errors.New("undefined mongo collection")
 	}
 
-	return &MongoHook{collection: collection}, nil
+	hook := &MongoHook{collection: collection}
+
+	for _, opt := range opts {
+		opt(hook)
+	}
+
+	return hook, nil
 }
 
 // Fire hook
 func (hook *MongoHook) Fire(entry *logrus.Entry) error {
-	data, err := entry.String()
+	ctx, cancel := hook.context(entry)
 
-	if err != nil {
-		return err
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
+
+	s, _ := entry.String()
+
+	document := bson.M{
+		"time": entry.Time,
+		"level": entry.Level.String(),
+		"message": entry.Message,
+		"entry": s,
 	}
 
-	var parentContext = entry.Context
+	if len(entry.Data) > 0 {
+		for key, value := range entry.Data {
+			document[key] = value
+		}
+	}
 
-	if entry.Context == nil {
+	_, err := hook.collection.InsertOne(ctx, document)
+
+	return err
+}
+
+func (hook *MongoHook) context(entry *logrus.Entry) (context.Context, context.CancelFunc) {
+	parentContext := entry.Context
+
+	if parentContext == nil {
 		parentContext = context.Background()
 	}
 
-	ctx, cancelFunc := context.WithTimeout(parentContext, time.Second*10)
-	defer cancelFunc()
+	if hook.timeout != nil {
+		return context.WithTimeout(parentContext, *hook.timeout)
+	}
 
-	_, err = hook.collection.InsertOne(ctx, bson.M{"entry": data})
-
-	return err
+	return parentContext, nil
 }
 
 func (hook *MongoHook) Levels() []logrus.Level {
